@@ -783,7 +783,7 @@ class SpectralClustering:
         self.cuda = cuda
         self.device = device
 
-    def forward(self, X) -> torch.Tensor:
+    def forward(self, X) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Call self.clusterSpectralEmbeddings() function to predict cluster labels.
 
@@ -797,12 +797,12 @@ class SpectralClustering:
         """
         if X.shape[0] != X.shape[1]:
             raise ValueError("The affinity matrix is not a square matrix.")
-        labels = self.clusterSpectralEmbeddings(X, cuda=self.cuda, device=self.device)
-        return labels
+        labels, euc_dist = self.clusterSpectralEmbeddings(X, cuda=self.cuda, device=self.device)
+        return labels, euc_dist
 
     def clusterSpectralEmbeddings(
         self, affinity: torch.Tensor, cuda: bool = False, device: torch.device = torch.device('cpu')
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Perform k-means clustering on spectral embeddings. To alleviate the effect of randomness,
         k-means clustering is performed for (self.n_random_trials) times then the final labels are obtained
@@ -833,7 +833,16 @@ class SpectralClustering:
         stacked_labels = torch.stack(labels_set)
         label_index = torch.mode(torch.mode(stacked_labels, 0)[1])[0]
         labels = stacked_labels[label_index]
-        return labels
+        _, n_features = spectral_emb.shape
+        centers = torch.zeros(self.n_clusters, n_features, dtype=spectral_emb.dtype)
+        for index in range(self.n_clusters):
+            selected_cluster = torch.nonzero(labels == index).squeeze().to(device)
+            chosen_indices = torch.index_select(spectral_emb, 0, selected_cluster)
+            if chosen_indices.shape[0] == 0:
+                chosen_indices = spectral_emb[torch.randint(len(spectral_emb), (1,))]
+            centers[index] = chosen_indices.mean(dim=0)
+        euc_dist = getEuclideanDistance(spectral_emb, centers, device=device)
+        return labels, euc_dist
 
     def getSpectralEmbeddings(self, affinity_mat: torch.Tensor, n_spks: int = 8, cuda: bool = False) -> torch.Tensor:
         """
@@ -1174,7 +1183,8 @@ class SpeakerClustering(torch.nn.Module):
         est_num_of_spk_enhanced: torch.Tensor = torch.tensor(-1),
         fixed_thres: float = -1.0,
         kmeans_random_trials: int = 1,
-    ) -> torch.LongTensor:
+        sc_n_clusters: int = -1,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         This function takes a cosine similarity matrix `mat` and returns the speaker labels for the segments 
         in the given input embeddings. 
@@ -1205,7 +1215,7 @@ class SpeakerClustering(torch.nn.Module):
                 The number of random trials for initializing k-means clustering. More trials can result in more stable clustering. The default is 1. 
                 
         Returns:
-            Y (LongTensor):
+            Y (Tensor):
                 Speaker labels (clustering output) in integer format for the segments in the given input embeddings.
         """
         nmesc = NMESC(
@@ -1239,12 +1249,13 @@ class SpeakerClustering(torch.nn.Module):
             n_clusters = int(est_num_of_spk.item())
 
         spectral_model = SpectralClustering(
-            n_clusters=n_clusters, n_random_trials=kmeans_random_trials, cuda=self.cuda, device=self.device
+            n_clusters=sc_n_clusters if sc_n_clusters > 0 else n_clusters,
+            n_random_trials=kmeans_random_trials, cuda=self.cuda, device=self.device
         )
-        Y = spectral_model.forward(affinity_mat)
-        return Y
+        Y, euc_dist = spectral_model.forward(affinity_mat)
+        return Y, euc_dist
 
-    def forward(self, param_dict: Dict[str, torch.Tensor]) -> torch.LongTensor:
+    def forward(self, param_dict: Dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
         """
         A function wrapper designed for inference in exported script format.
 
@@ -1297,7 +1308,7 @@ class SpeakerClustering(torch.nn.Module):
         sparse_search_volume: int = 30,
         fixed_thres: float = -1.0,
         kmeans_random_trials: int = 1,
-    ) -> torch.LongTensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Calculate the affinity matrix using timestamps and speaker embeddings, run NME analysis to estimate the best
         p-value, and perform spectral clustering based on the estimated p-value and the calculated affinity matrix.

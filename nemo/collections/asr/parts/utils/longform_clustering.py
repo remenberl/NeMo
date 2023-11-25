@@ -302,12 +302,13 @@ class LongFormSpeakerClustering(torch.nn.Module):
             else:
                 mat = getCosAffinityMatrix(emb_part)
                 overcluster_count = min(chunk_cluster_count, mat.shape[0])
-                Y_part = self.speaker_clustering.forward_unit_infer(
+                Y_part, _ = self.speaker_clustering.forward_unit_infer(
                     mat=mat,
                     oracle_num_speakers=overcluster_count,
                     max_rp_threshold=max_rp_threshold,
                     max_num_speakers=chunk_cluster_count,
                     sparse_search_volume=sparse_search_volume,
+                    sc_n_clusters=max(overcluster_count // 5, chunk_cluster_count // 5)
                 )
 
             # Step-3: Merge the clusters to form the aggregated clustering labels `Y_aggr`
@@ -344,7 +345,7 @@ class LongFormSpeakerClustering(torch.nn.Module):
         reduced_mat = getCosAffinityMatrix(reduced_embs)
 
         # Step-4: Map the aggregated labels `Y_aggr` back to the original labels for all `org_len` input embeddings: `Y_unpack`
-        Y_aggr = self.speaker_clustering.forward_unit_infer(
+        Y_aggr, euc_dist = self.speaker_clustering.forward_unit_infer(
             mat=reduced_mat,
             oracle_num_speakers=oracle_num_speakers,
             max_rp_threshold=max_rp_threshold,
@@ -384,7 +385,7 @@ class LongFormSpeakerClustering(torch.nn.Module):
         fixed_thres: float = -1.0,
         chunk_cluster_count: int = 50,
         embeddings_per_chunk: int = 10000,
-    ) -> torch.LongTensor:
+    ) -> torch.Tensor:
         """
         This function is a wrapper designed for toggling between long-form and short-form speaker clustering.
         The details of short-form clustering is in `SpeakerClustering` class.
@@ -406,7 +407,7 @@ class LongFormSpeakerClustering(torch.nn.Module):
                 embeddings_per_chunk=embeddings_per_chunk,
             )
         else:
-            cluster_labels = self.speaker_clustering.forward_infer(
+            cluster_labels, _ = self.speaker_clustering.forward_infer(
                 embeddings_in_scales=embeddings_in_scales,
                 timestamps_in_scales=timestamps_in_scales,
                 multiscale_segment_counts=multiscale_segment_counts,

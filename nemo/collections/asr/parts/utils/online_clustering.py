@@ -325,7 +325,7 @@ def merge_vectors(
     """
     if emb_ndx.shape[0] != pre_cluster_labels.shape[0]:
         raise ValueError("pre_cluster_labels and emb_ndx have mismatch in dimension")
-    avg_emb = torch.mean(emb_ndx[selected_inds, :], dim=0)
+    avg_emb = emb_ndx[selected_inds[0], :]
     merged_clus_labels = pre_cluster_labels[selected_inds]
     selected_inds_list: List[int] = selected_inds.tolist()
     bypass_inds_list: List[int] = []
