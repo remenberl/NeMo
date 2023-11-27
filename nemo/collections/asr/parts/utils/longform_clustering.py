@@ -308,7 +308,7 @@ class LongFormSpeakerClustering(torch.nn.Module):
                     max_rp_threshold=max_rp_threshold,
                     max_num_speakers=chunk_cluster_count,
                     sparse_search_volume=sparse_search_volume,
-                    sc_n_clusters=max(overcluster_count // 5, chunk_cluster_count // 5)
+                    #sc_n_clusters=max(overcluster_count // 5, chunk_cluster_count // 5)
                 )
 
             # Step-3: Merge the clusters to form the aggregated clustering labels `Y_aggr`
